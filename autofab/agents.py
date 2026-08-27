@@ -8,7 +8,8 @@ Implements the multi-agent pipeline:
 import os
 from typing import Optional
 
-import anthropic
+#import anthropic
+from openai import OpenAI
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -32,26 +33,61 @@ def reset_token_usage():
     _token_usage["calls"] = 0
 
 
-def _get_client() -> anthropic.Anthropic:
-    return anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
-
-
-def _call_claude(system: str, user: str, model: str = "claude-sonnet-4-5-20250929", max_tokens: int = 4096) -> str:
-    """Call Claude and return the text response. Tracks token usage."""
-    client = _get_client()
-    response = client.messages.create(
-        model=model,
-        max_tokens=max_tokens,
-        system=system,
-        messages=[{"role": "user", "content": user}],
+# def _get_client() -> anthropic.Anthropic:
+#     return anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+def _get_client()->OpenAI:
+    return OpenAI(
+        api_key=os.getenv("QWEN_API_KEY"),
+        base_url=os.getenv("QWEN_BASE_URL"),
     )
-    # Accumulate token usage
-    if hasattr(response, "usage") and response.usage:
-        _token_usage["input_tokens"] += response.usage.input_tokens
-        _token_usage["output_tokens"] += response.usage.output_tokens
-    _token_usage["calls"] += 1
-    return response.content[0].text
 
+# def _call_claude(system: str, user: str, model: str = "claude-sonnet-4-5-20250929", max_tokens: int = 4096) -> str:
+#     """Call Claude and return the text response. Tracks token usage."""
+#     client = _get_client()
+#     response = client.messages.create(
+#         model=model,
+#         max_tokens=max_tokens,
+#         system=system,
+#         messages=[{"role": "user", "content": user}],
+#     )
+#     # Accumulate token usage
+#     if hasattr(response, "usage") and response.usage:
+#         _token_usage["input_tokens"] += response.usage.input_tokens
+#         _token_usage["output_tokens"] += response.usage.output_tokens
+#     _token_usage["calls"] += 1
+#     return response.content[0].text
+
+def _call_qwen(
+    system: str,
+    user: str,
+    model: str | None = None,
+    max_tokens: int = 4096,
+) -> str:
+
+    client = _get_client()
+
+    response = client.chat.completions.create(
+        model=model or os.getenv("QWEN_MODEL"),
+        messages=[
+            {
+                "role": "system",
+                "content": system,
+            },
+            {
+                "role": "user",
+                "content": user,
+            },
+        ],
+        max_tokens=max_tokens,
+    )
+
+    if hasattr(response, "usage") and response.usage:
+        _token_usage["input_tokens"] += response.usage.prompt_tokens or 0
+        _token_usage["output_tokens"] += response.usage.completion_tokens or 0
+
+    _token_usage["calls"] += 1
+
+    return response.choices[0].message.content
 
 # ---------------------------------------------------------------------------
 # PLANNER AGENT
@@ -90,7 +126,7 @@ Output ONLY valid JSON, no other text."""
 def plan(prompt: str) -> dict:
     """Planner agent: natural language → structured design plan."""
     import json
-    response = _call_claude(PLANNER_SYSTEM, prompt)
+    response = _call_qwen(PLANNER_SYSTEM, prompt)
     # Strip markdown code fences if present
     text = response.strip()
     if text.startswith("```"):
@@ -148,7 +184,7 @@ Design plan:
 
 {kb1_context}Generate the CadQuery Python script. Remember: assign the final shape to `result`."""
 
-    response = _call_claude(CODER_SYSTEM, user_msg)
+    response = _call_qwen(CODER_SYSTEM, user_msg)
     # Strip markdown code fences if present
     code = response.strip()
     if code.startswith("```python"):
@@ -212,7 +248,7 @@ ERROR:
 
 Fix the code. Output ONLY the corrected Python code."""
 
-    response = _call_claude(ERROR_REFINER_SYSTEM, user_msg)
+    response = _call_qwen(ERROR_REFINER_SYSTEM, user_msg)
     code = response.strip()
     if code.startswith("```python"):
         code = code[len("```python"):].strip()
@@ -274,6 +310,121 @@ Output a JSON object with EXACTLY these fields:
 Output ONLY valid JSON, no other text."""
 
 
+# def evaluate_geometry(
+#     prompt: str,
+#     code: str,
+#     geometry_metrics: dict,
+#     stl_path: str = "",
+#     render_save_path: str = "",
+#     prior_judge_feedback: list[str] | None = None,
+# ) -> dict:
+#     """Validator agent: evaluates code, kernel metrics, and rendered image against the prompt.
+
+#     Uses Claude Opus as the Judge model — a stronger model than the Coder
+#     (Sonnet) to avoid confirmation bias from self-evaluation.
+
+#     When stl_path is provided, renders a three-view image and sends it
+#     alongside the text evidence for visual cross-referencing.
+
+#     Args:
+#         prompt: Original user request.
+#         code: Generated CadQuery code.
+#         geometry_metrics: Kernel measurements dict.
+#         stl_path: Path to the generated STL. If provided, a three-view
+#             render is created and sent to the Judge.
+#         render_save_path: If provided, the rendered PNG is saved here
+#             (for paper figures / iteration progression). Otherwise a
+#             temporary file is used and cleaned up.
+#         prior_judge_feedback: List of feedback strings from previous
+#             iterations (oldest first). Allows the Judge to escalate
+#             when repeated issues are not addressed.
+#     """
+#     import json
+#     import base64
+
+#     text_content = (
+#         f"ORIGINAL PROMPT:\n{prompt}\n\n"
+#         f"GENERATED CODE:\n```python\n{code}\n```\n\n"
+#         f"KERNEL METRICS:\n{json.dumps(geometry_metrics, indent=2)}\n\n"
+#     )
+
+#     if prior_judge_feedback:
+#         text_content += "YOUR PRIOR FEEDBACK (from previous iterations, oldest first):\n"
+#         for i, fb in enumerate(prior_judge_feedback):
+#             text_content += f"  Iteration {i}: {fb}\n"
+#         text_content += "\nIf the same issues persist, escalate — recommend a fundamentally different approach.\n\n"
+
+#     text_content += "Evaluate and return JSON."
+
+#     # Build message content — with or without image
+#     message_content = []
+
+#     if stl_path:
+#         try:
+#             from .render import render_stl_to_png
+#             import tempfile
+#             import os
+
+#             # Render to a persistent path if provided, otherwise temp
+#             if render_save_path:
+#                 png_path = render_save_path
+#                 os.makedirs(os.path.dirname(png_path) if os.path.dirname(png_path) else ".", exist_ok=True)
+#             else:
+#                 tmp_dir = tempfile.mkdtemp(prefix="autofab_judge_")
+#                 png_path = os.path.join(tmp_dir, "judge_render.png")
+
+#             render_stl_to_png(stl_path, png_path)
+
+#             with open(png_path, "rb") as f:
+#                 image_data = base64.standard_b64encode(f.read()).decode("utf-8")
+
+#             message_content.append({
+#                 "type": "image",
+#                 "source": {
+#                     "type": "base64",
+#                     "media_type": "image/png",
+#                     "data": image_data,
+#                 },
+#             })
+
+#             # Clean up only if we used a temp file
+#             if not render_save_path:
+#                 try:
+#                     os.remove(png_path)
+#                     os.rmdir(tmp_dir)
+#                 except OSError:
+#                     pass
+
+#         except Exception:
+#             # If rendering fails, proceed without image — don't block validation
+#             pass
+
+#     message_content.append({"type": "text", "text": text_content})
+
+#     # Call Opus with vision-capable message format
+#     client = _get_client()
+#     response = client.messages.create(
+#         model="claude-opus-4-20250514",
+#         max_tokens=4096,
+#         system=VALIDATOR_SYSTEM,
+#         messages=[{"role": "user", "content": message_content}],
+#     )
+
+#     # Track token usage
+#     if hasattr(response, "usage") and response.usage:
+#         _token_usage["input_tokens"] += response.usage.input_tokens
+#         _token_usage["output_tokens"] += response.usage.output_tokens
+#     _token_usage["calls"] += 1
+
+#     text = response.content[0].text.strip()
+#     if text.startswith("```json"):
+#         text = text[len("```json"):].strip()
+#     elif text.startswith("```"):
+#         text = text[3:].strip()
+#     if text.endswith("```"):
+#         text = text[:-3].strip()
+
+#     return json.loads(text)
 def evaluate_geometry(
     prompt: str,
     code: str,
@@ -284,7 +435,7 @@ def evaluate_geometry(
 ) -> dict:
     """Validator agent: evaluates code, kernel metrics, and rendered image against the prompt.
 
-    Uses Claude Opus as the Judge model — a stronger model than the Coder
+    Uses Qwen-VL as the Judge model — a stronger model than the Coder
     (Sonnet) to avoid confirmation bias from self-evaluation.
 
     When stl_path is provided, renders a three-view image and sends it
@@ -320,7 +471,7 @@ def evaluate_geometry(
 
     text_content += "Evaluate and return JSON."
 
-    # Build message content — with or without image
+    # Build message content — with or without image (Qwen-VL format)
     message_content = []
 
     if stl_path:
@@ -342,12 +493,11 @@ def evaluate_geometry(
             with open(png_path, "rb") as f:
                 image_data = base64.standard_b64encode(f.read()).decode("utf-8")
 
+            # Qwen-VL uses OpenAI-compatible image format
             message_content.append({
-                "type": "image",
-                "source": {
-                    "type": "base64",
-                    "media_type": "image/png",
-                    "data": image_data,
+                "type": "image_url",
+                "image_url": {
+                    "url": f"data:image/png;base64,{image_data}",
                 },
             })
 
@@ -365,22 +515,25 @@ def evaluate_geometry(
 
     message_content.append({"type": "text", "text": text_content})
 
-    # Call Opus with vision-capable message format
+    # Call Qwen-VL with vision-capable message format (OpenAI-compatible)
+    vision_model = os.getenv("QWEN_VISION_MODEL", "qwen-vl-7b")
     client = _get_client()
-    response = client.messages.create(
-        model="claude-opus-4-20250514",
+    response = client.chat.completions.create(
+        model=vision_model,
         max_tokens=4096,
-        system=VALIDATOR_SYSTEM,
-        messages=[{"role": "user", "content": message_content}],
+        messages=[
+            {"role": "system", "content": VALIDATOR_SYSTEM},
+            {"role": "user", "content": message_content},
+        ],
     )
 
     # Track token usage
-    if hasattr(response, "usage") and response.usage:
-        _token_usage["input_tokens"] += response.usage.input_tokens
-        _token_usage["output_tokens"] += response.usage.output_tokens
+    if response.usage:
+        _token_usage["input_tokens"] += response.usage.prompt_tokens
+        _token_usage["output_tokens"] += response.usage.completion_tokens
     _token_usage["calls"] += 1
 
-    text = response.content[0].text.strip()
+    text = response.choices[0].message.content.strip()
     if text.startswith("```json"):
         text = text[len("```json"):].strip()
     elif text.startswith("```"):
@@ -497,7 +650,7 @@ GEOMETRIC VALIDATION FEEDBACK:
 
 Fix the geometry issues identified above. Make targeted changes based on the exact measurements provided. Output ONLY the corrected Python code."""
 
-    response = _call_claude(REFINER_SYSTEM, user_msg)
+    response = _call_qwen(REFINER_SYSTEM, user_msg)
     code = response.strip()
     if code.startswith("```python"):
         code = code[len("```python"):].strip()
