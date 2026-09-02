@@ -5,14 +5,16 @@ Implements the multi-agent pipeline:
                                           → Error Refiner (on code errors)
 """
 
+# import os
 import os
 from typing import Optional
 
 #import anthropic
 from openai import OpenAI
-from dotenv import load_dotenv
+import json, re
+from dotenv import load_dotenv, find_dotenv
 
-load_dotenv()
+load_dotenv(find_dotenv())
 
 # ---------------------------------------------------------------------------
 # Token usage tracking
@@ -36,10 +38,16 @@ def reset_token_usage():
 # def _get_client() -> anthropic.Anthropic:
 #     return anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
 def _get_client()->OpenAI:
+    # return OpenAI(
+    #     api_key=os.getenv("QWEN_API_KEY"),
+    #     base_url=os.getenv("QWEN_BASE_URL"),
+    # )
     return OpenAI(
-        api_key=os.getenv("QWEN_API_KEY"),
-        base_url=os.getenv("QWEN_BASE_URL"),
-    )
+    api_key=os.getenv("QWEN_API_KEY"),
+    base_url=os.getenv("QWEN_BASE_URL"),
+    timeout=1200.0,
+    max_retries=6,
+)
 
 # def _call_claude(system: str, user: str, model: str = "claude-sonnet-4-5-20250929", max_tokens: int = 4096) -> str:
 #     """Call Claude and return the text response. Tracks token usage."""
@@ -87,7 +95,20 @@ def _call_qwen(
 
     _token_usage["calls"] += 1
 
-    return response.choices[0].message.content
+    # return response.choices[0].message.content
+    choice = response.choices[0]
+    if choice.finish_reason == "length":
+        print(f"[warn] truncated at max_tokens={max_tokens}")
+    return choice.message.content
+
+
+def _extract_json(text: str) -> dict:
+    t = re.sub(r"^\s*```(?:json)?\s*", "", text.strip())
+    t = re.sub(r"\s*```\s*$", "", t)
+    s, e = t.find("{"), t.rfind("}")
+    if s == -1 or e == -1 or e < s:
+        raise ValueError(f"no JSON object in response: {text[:300]}")
+    return json.loads(t[s:e + 1])
 
 # ---------------------------------------------------------------------------
 # PLANNER AGENT
@@ -125,17 +146,24 @@ Output ONLY valid JSON, no other text."""
 
 def plan(prompt: str) -> dict:
     """Planner agent: natural language → structured design plan."""
-    import json
-    response = _call_qwen(PLANNER_SYSTEM, prompt)
-    # Strip markdown code fences if present
-    text = response.strip()
-    if text.startswith("```"):
-        text = text.split("\n", 1)[1]
-        if text.endswith("```"):
-            text = text[:-3]
-        elif "```" in text:
-            text = text[:text.rfind("```")]
-    return json.loads(text.strip())
+    # import json
+    # response = _call_qwen(PLANNER_SYSTEM, prompt)
+    # # Strip markdown code fences if present
+    # text = response.strip()
+    # if text.startswith("```"):
+    #     text = text.split("\n", 1)[1]
+    #     if text.endswith("```"):
+    #         text = text[:-3]
+    #     elif "```" in text:
+    #         text = text[:text.rfind("```")]
+    # return json.loads(text.strip())
+    last = None
+    for _ in range(3):
+        try:
+            return _extract_json(_call_qwen(PLANNER_SYSTEM, prompt))
+        except (ValueError, json.JSONDecodeError) as exc:
+            last = exc
+    raise RuntimeError(f"planner returned unparseable JSON: {last}")
 
 
 # ---------------------------------------------------------------------------
@@ -478,7 +506,7 @@ def evaluate_geometry(
         try:
             from .render import render_stl_to_png
             import tempfile
-            import os
+            # import os
 
             # Render to a persistent path if provided, otherwise temp
             if render_save_path:
@@ -490,8 +518,15 @@ def evaluate_geometry(
 
             render_stl_to_png(stl_path, png_path)
 
-            with open(png_path, "rb") as f:
-                image_data = base64.standard_b64encode(f.read()).decode("utf-8")
+            # with open(png_path, "rb") as f:
+            #     image_data = base64.standard_b64encode(f.read()).decode("utf-8")
+            from PIL import Image
+            import io
+            img = Image.open(png_path)
+            img.thumbnail((1024, 1024))
+            buf = io.BytesIO()
+            img.save(buf, format="PNG")
+            image_data = base64.standard_b64encode(buf.getvalue()).decode("utf-8")
 
             # Qwen-VL uses OpenAI-compatible image format
             message_content.append({
@@ -529,19 +564,22 @@ def evaluate_geometry(
 
     # Track token usage
     if response.usage:
-        _token_usage["input_tokens"] += response.usage.prompt_tokens
-        _token_usage["output_tokens"] += response.usage.completion_tokens
+        # _token_usage["input_tokens"] += response.usage.prompt_tokens
+        # _token_usage["output_tokens"] += response.usage.completion_tokens
+        _token_usage["input_tokens"] += response.usage.prompt_tokens or 0
+        _token_usage["output_tokens"] += response.usage.completion_tokens or 0
     _token_usage["calls"] += 1
 
-    text = response.choices[0].message.content.strip()
-    if text.startswith("```json"):
-        text = text[len("```json"):].strip()
-    elif text.startswith("```"):
-        text = text[3:].strip()
-    if text.endswith("```"):
-        text = text[:-3].strip()
+    # text = response.choices[0].message.content.strip()
+    # if text.startswith("```json"):
+    #     text = text[len("```json"):].strip()
+    # elif text.startswith("```"):
+    #     text = text[3:].strip()
+    # if text.endswith("```"):
+    #     text = text[:-3].strip()
 
-    return json.loads(text)
+    # return json.loads(text)
+    return _extract_json(response.choices[0].message.content)
 
 
 # ---------------------------------------------------------------------------
