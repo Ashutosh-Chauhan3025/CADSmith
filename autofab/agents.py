@@ -530,7 +530,8 @@ def evaluate_geometry(
             from PIL import Image
             import io
             img = Image.open(png_path)
-            img.thumbnail((1024, 1024))
+            # img.thumbnail((1024, 1024))
+            img.thumbnail((2048, 2048))
             buf = io.BytesIO()
             img.save(buf, format="PNG")
             image_data = base64.standard_b64encode(buf.getvalue()).decode("utf-8")
