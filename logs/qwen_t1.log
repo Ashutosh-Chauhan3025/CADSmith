@@ -1,0 +1,41 @@
+nohup: ignoring input
+Loading custom benchmark entries...
+  T1: 50 entries loaded
+Total: 50 entries
+Already completed: 12, remaining: 38
+
+[13/50] T1_013 (T1): A stadium (oblong) shape 60mm long (X), 20mm wide (Y), and 8...
+
+============================================================
+AUTOFAB PIPELINE: A stadium (oblong) shape 60mm long (X), 20mm wide (Y), and 8mm thick (Z), lying ...
+============================================================
+
+[1/4] PLANNER: Decomposing design...
+  Components: ['rectangular middle section', 'left semicircular end', 'right semicircular end']
+  Dimensions: {
+    "overall_bbox": {
+        "xlen": 60,
+        "ylen": 20,
+        "zlen": 8
+    },
+    "key_dimensions": {
+        "rectangular_length": 60,
+        "rectangular_width": 20,
+        "semicircle_diameter": 20,
+        "thickness": 8
+    }
+}
+
+[2/4] CODER: Generating CadQuery code...
+  Generated 1 lines of code
+
+--- Iteration 0 ---
+  [EXEC] Error (NameError): Traceback (most recent call last):
+  File "/home/ashu/Desktop/internship/CADSmith-Original/results/qwen_t1/generated_stls/T1_013_iter0_runner.py", line 12, in <module>
+    exec(open("/home/ashu/Deskto...
+  [ERROR FIX] Attempt 1/3...
+  [EXEC] Success in 2004ms
+  [VALIDATE] Checking geometry (with visual)...
+  [FAIL] llm_judge: The generated code creates a simple rectangular box, which does not match the requested stadium (oblong) shape with semicircular ends along the X axis. The rendered image confirms this: the part is a solid rectangular block, not a rounded rectangle. The kernel metrics show a standard box with 6 faces, 12 edges, and 8 vertices — consistent with a rectangular prism, not a stadium shape. The bounding box dimensions (60x20x8) are correct for the requested size, but the shape is fundamentally wrong. The user explicitly requested semicircular ends, which are absent. The volume (9600.0) is correct for a 60x20x8 box, but this is not the shape requested. The part must be constructed by extruding a stadium-shaped 2D profile (rectangle with semicircles on both ends) along the Z axis, or by boolean operations to create the rounded ends. The current code fails to meet the geometric requirement.
+
+  [REFINE] Sending geometric feedback to Refiner agent (attempt 1/5)...

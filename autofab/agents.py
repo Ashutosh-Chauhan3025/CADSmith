@@ -45,7 +45,7 @@ def _get_client()->OpenAI:
     return OpenAI(
     api_key=os.getenv("QWEN_API_KEY"),
     base_url=os.getenv("QWEN_BASE_URL"),
-    timeout=1200.0,
+    timeout=300.0,
     max_retries=6,
 )
 
