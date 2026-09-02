@@ -70,6 +70,7 @@ def _call_qwen(
     user: str,
     model: str | None = None,
     max_tokens: int = 4096,
+    temperature: float = 0.0,
 ) -> str:
 
     client = _get_client()
@@ -87,6 +88,7 @@ def _call_qwen(
             },
         ],
         max_tokens=max_tokens,
+        temperature=temperature,
     )
 
     if hasattr(response, "usage") and response.usage:
@@ -158,9 +160,14 @@ def plan(prompt: str) -> dict:
     #         text = text[:text.rfind("```")]
     # return json.loads(text.strip())
     last = None
-    for _ in range(3):
+    # for _ in range(3):
+    #     try:
+    #         return _extract_json(_call_qwen(PLANNER_SYSTEM, prompt))
+    for attempt in range(3):
         try:
-            return _extract_json(_call_qwen(PLANNER_SYSTEM, prompt))
+            return _extract_json(_call_qwen(
+                PLANNER_SYSTEM, prompt,
+                temperature=0.0 if attempt == 0 else 0.7))
         except (ValueError, json.JSONDecodeError) as exc:
             last = exc
     raise RuntimeError(f"planner returned unparseable JSON: {last}")
@@ -544,9 +551,11 @@ def evaluate_geometry(
                 except OSError:
                     pass
 
-        except Exception:
-            # If rendering fails, proceed without image — don't block validation
-            pass
+        # except Exception:
+        #     # If rendering fails, proceed without image — don't block validation
+        #     pass
+        except Exception as exc:
+            print(f"[warn] render failed, judging WITHOUT image: {exc}")
 
     message_content.append({"type": "text", "text": text_content})
 
@@ -579,7 +588,13 @@ def evaluate_geometry(
     #     text = text[:-3].strip()
 
     # return json.loads(text)
-    return _extract_json(response.choices[0].message.content)
+    raw = response.choices[0].message.content
+    try:
+        return _extract_json(raw)
+    except (ValueError, json.JSONDecodeError):
+        return {"passed": False,
+                "feedback": f"Judge output unparseable, treating as fail: {raw[:400]}"}
+    # return _extract_json(response.choices[0].message.content)
 
 
 # ---------------------------------------------------------------------------
