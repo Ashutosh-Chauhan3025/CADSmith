@@ -1,0 +1,56 @@
+check_llm
+
+base_url     : https://annex-suddenly-descending-responsibilities.trycloudflare.com/v1
+api_key      : sgpbench...
+model        : Qwen/Qwen3-VL-8B-Instruct
+vision_model : Qwen/Qwen3-VL-8B-Instruct
+
+[1] /v1/models ... ['Qwen/Qwen3-VL-8B-Instruct'] (1.7s)
+[2] text ... 'OK' (0.5s)
+[3] planner JSON ... ['acceptance_criteria', 'components', 'constraints', 'description', 'dimensions', 'notes'] (10.8s)
+[4] vision ... '3' (expected 3) (0.7s)
+
+tokens: {'input_tokens': 291, 'output_tokens': 216, 'calls': 2}
+
+check_pipeline
+
+[1] executor / cadquery ... ok (26084 bytes)
+[2] vtk render ... ok (4800, 1600) -> /home/ashu/Desktop/internship/CADSmith-Original/outputs/smoke/smoke.png
+[3] metrics (self vs self) ... CD=0.1758 F1=1.0000 IoU=0.9850  (expect ~0 / ~1 / ~1)
+[4] full pipeline ...
+
+============================================================
+AUTOFAB PIPELINE: A 40mm x 30mm x 5mm rectangular plate with a 6mm hole at its centre....
+============================================================
+
+[1/4] PLANNER: Decomposing design...
+  Components: ['main_plate', 'central_hole']
+  Dimensions: {
+    "overall_bbox": {
+        "xlen": 40,
+        "ylen": 30,
+        "zlen": 5
+    },
+    "key_dimensions": {
+        "plate_thickness": 5,
+        "plate_width": 40,
+        "plate_height": 30,
+        "hole_diameter": 6
+    }
+}
+
+[2/4] CODER: Generating CadQuery code...
+  Generated 1 lines of code
+
+--- Iteration 0 ---
+  [EXEC] Error (NameError): Traceback (most recent call last):
+  File "/home/ashu/Desktop/internship/CADSmith-Original/outputs/smoke/smoke_part_iter0_runner.py", line 12, in <module>
+    exec(open("/home/ashu/Desktop/internship/...
+  [ERROR FIX] Attempt 1/2...
+  [EXEC] Success in 2424ms
+  [VALIDATE] Checking geometry (with visual)...
+  ALL CHECKS PASSED at iteration 0!
+
+converged=True iters=1 calls=4 wall=24s
+geometry: {'volume': 5858.628330588459, 'center_of_mass': [5.086239354928692e-16, -1.4874674343794075e-16, 1.0422621628952234e-18], 'bounding_box': {'xmin': -20.0, 'xmax': 20.0, 'xlen': 40.0, 'ymin': -15.0, 'ymax': 15.0, 'ylen': 30.0, 'zmin': -2.5, 'zmax': 2.5, 'zlen': 5.0}, 'is_valid': True, 'num_faces': 7, 'num_edges': 15, 'num_vertices': 10}
+tokens  : {'input_tokens': 4883, 'output_tokens': 345, 'calls': 4}

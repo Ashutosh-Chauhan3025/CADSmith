@@ -1,0 +1,9 @@
+import cadquery as cq
+
+result = (
+    cq.Workplane("XY")
+    .box(40, 30, 5, centered=(True, True, True))
+    .faces(">Z")
+    .workplane()
+    .hole(6)
+)
